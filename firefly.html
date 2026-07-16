@@ -1,0 +1,571 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>字符萤火虫</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400&display=swap" rel="stylesheet">
+<style>
+*{margin:0;padding:0;box-sizing:border-box;}
+html,body{width:100%;height:100%;overflow:hidden;background:#020b07;}
+canvas{display:block;position:fixed;inset:0;}
+
+/* ── cursor ── */
+#cur{
+  position:fixed;width:14px;height:14px;border-radius:50%;
+  pointer-events:none;z-index:900;
+  transform:translate(-50%,-50%);
+  border:1.5px solid rgba(168,240,122,0.55);
+  transition:width .12s,height .12s,opacity .12s;
+  mix-blend-mode:screen;
+}
+#cur.fast{width:28px;height:28px;opacity:.6;}
+
+/* ── toggle ── */
+#tog{
+  position:fixed;top:18px;right:18px;z-index:800;
+  background:rgba(168,240,122,0.07);
+  border:1px solid rgba(168,240,122,0.28);
+  color:#a8f07a;padding:6px 16px;
+  font-family:'DM Mono',monospace;font-size:11px;letter-spacing:.15em;
+  cursor:pointer;border-radius:3px;
+  transition:background .2s;
+}
+#tog:hover{background:rgba(168,240,122,0.15);}
+
+/* ── panel ── */
+#pnl{
+  position:fixed;top:0;right:-296px;width:276px;height:100vh;
+  background:rgba(2,8,4,0.93);
+  border-left:1px solid rgba(168,240,122,0.12);
+  backdrop-filter:blur(16px);
+  z-index:799;padding:56px 20px 24px;
+  overflow-y:auto;display:flex;flex-direction:column;gap:18px;
+  transition:right .32s cubic-bezier(.4,0,.2,1);
+  scrollbar-width:thin;scrollbar-color:rgba(168,240,122,0.15) transparent;
+}
+#pnl.open{right:0;}
+#pnl h2{
+  font-family:'DM Mono',monospace;font-size:9px;letter-spacing:.3em;
+  text-transform:uppercase;color:rgba(168,240,122,0.45);
+  border-bottom:1px solid rgba(168,240,122,0.1);padding-bottom:8px;
+}
+
+.row{display:flex;flex-direction:column;gap:5px;}
+.row label{
+  font-family:'DM Mono',monospace;font-size:10px;letter-spacing:.1em;
+  color:rgba(245,225,106,0.55);display:flex;justify-content:space-between;
+}
+.row label em{color:#a8f07a;font-style:normal;}
+
+input[type=range]{
+  -webkit-appearance:none;width:100%;height:2px;
+  background:rgba(168,240,122,0.15);border-radius:2px;outline:none;cursor:pointer;
+}
+input[type=range]::-webkit-slider-thumb{
+  -webkit-appearance:none;width:11px;height:11px;border-radius:50%;
+  background:#a8f07a;box-shadow:0 0 7px #a8f07a;cursor:pointer;
+}
+
+textarea{
+  font-family:'DM Mono',monospace;font-size:12px;
+  background:rgba(0,0,0,0.4);border:1px solid rgba(168,240,122,0.15);
+  color:#f5e16a;padding:7px;resize:vertical;min-height:58px;
+  border-radius:2px;outline:none;line-height:1.5;
+}
+textarea:focus{border-color:rgba(168,240,122,0.4);}
+
+.filelbl{
+  display:block;font-family:'DM Mono',monospace;font-size:10px;letter-spacing:.1em;
+  background:rgba(168,240,122,0.04);
+  border:1px dashed rgba(168,240,122,0.22);
+  color:rgba(168,240,122,0.45);text-align:center;padding:9px;
+  cursor:pointer;border-radius:2px;transition:background .2s;
+}
+.filelbl:hover{background:rgba(168,240,122,0.1);}
+#bgfile{display:none;}
+
+.clrbtn{
+  font-family:'DM Mono',monospace;font-size:10px;letter-spacing:.08em;
+  background:rgba(255,60,60,0.06);border:1px solid rgba(255,80,80,0.2);
+  color:rgba(255,110,110,0.65);padding:5px;cursor:pointer;border-radius:2px;
+  transition:background .2s;
+}
+.clrbtn:hover{background:rgba(255,60,60,0.15);}
+
+/* color scheme toggle */
+.scheme-row{display:flex;gap:6px;flex-wrap:wrap;}
+.spill{
+  font-family:'DM Mono',monospace;font-size:9px;letter-spacing:.1em;
+  padding:4px 10px;border-radius:20px;cursor:pointer;
+  border:1px solid transparent;transition:all .18s;
+}
+.spill.on{background:rgba(255,255,255,0.07);}
+
+#fpsbar{
+  position:fixed;bottom:12px;left:16px;z-index:50;
+  font-family:'DM Mono',monospace;font-size:9px;letter-spacing:.15em;
+  color:rgba(168,240,122,0.2);pointer-events:none;
+}
+</style>
+</head>
+<body>
+<div id="cur"></div>
+<canvas id="cv"></canvas>
+<div id="fpsbar">-- fps</div>
+<button id="tog">✦ PANEL</button>
+
+<div id="pnl">
+  <h2>字符萤火虫 · 控制台</h2>
+
+  <div class="row">
+    <label>背景图片</label>
+    <label class="filelbl" for="bgfile">点击上传 / 拖拽图片</label>
+    <input type="file" id="bgfile" accept="image/*">
+    <button class="clrbtn" id="clrbg">✕  清除背景图</button>
+  </div>
+
+  <div class="row">
+    <label>颜色方案</label>
+    <div class="scheme-row" id="schemes">
+      <span class="spill on" data-s="0" style="color:#f5e16a;border-color:#f5e16a44">暖黄</span>
+      <span class="spill"    data-s="1" style="color:#a8f07a;border-color:#a8f07a44">淡绿</span>
+      <span class="spill"    data-s="2" style="color:#f5e16a;border-color:#a8f07a44">混合</span>
+      <span class="spill"    data-s="3" style="color:#7de8ff;border-color:#7de8ff44">月蓝</span>
+    </div>
+  </div>
+
+  <div class="row">
+    <label>字符集 <em id="csn">0</em> 个</label>
+    <textarea id="cset"></textarea>
+  </div>
+
+  <div class="row">
+    <label>萤火虫密度 <em id="dval">0</em></label>
+    <input type="range" id="density" min="20" max="320" step="4">
+  </div>
+
+  <div class="row">
+    <label>字符大小 <em id="szval">0</em> px</label>
+    <input type="range" id="chsz" min="8" max="36" step="1">
+  </div>
+
+  <div class="row">
+    <label>发光强度 <em id="glval">0</em></label>
+    <input type="range" id="glow" min="0" max="50" step="1">
+  </div>
+
+  <div class="row">
+    <label>鼠标影响半径 <em id="rval">0</em> px</label>
+    <input type="range" id="mrad" min="40" max="280" step="5">
+  </div>
+
+  <div class="row">
+    <label>斥力强度 <em id="fval">0</em></label>
+    <input type="range" id="mforce" min="1" max="20" step="1">
+  </div>
+</div>
+
+<script>
+// ═══════════════════════════════════════════════════
+//  PALETTE SCHEMES
+// ═══════════════════════════════════════════════════
+const SCHEMES = [
+  // warm yellow
+  { primary:'#f5e16a', secondary:'#ffe9a0', hot:'#fffbe0', bg:'#020b07' },
+  // pale green
+  { primary:'#a8f07a', secondary:'#c8ffa0', hot:'#efffdd', bg:'#020a05' },
+  // mixed
+  { primary:'#f5e16a', secondary:'#a8f07a', hot:'#ffffcc', bg:'#020b07' },
+  // moon blue
+  { primary:'#7de8ff', secondary:'#b2f4ff', hot:'#e8ffff', bg:'#020710' },
+];
+let scheme = 0;
+
+// ═══════════════════════════════════════════════════
+//  CONFIG
+// ═══════════════════════════════════════════════════
+const CFG = {
+  charset:   '萤光夜星辰月影梦幻灵魂自由飞翔生命呼吸燃烧闪耀温柔微风轻盈永恒∞★✦·°',
+  count:     120,
+  charSize:  15,
+  glow:      22,
+  mRadius:   140,
+  mForce:    9,
+  spring:    0.04,
+  damping:   0.84,
+  wander:    0.012,   // random walk strength
+  wanderSpd: 0.6,     // max wander velocity
+  trailLen:  9,       // trail positions stored
+};
+
+// ═══════════════════════════════════════════════════
+//  STATE
+// ═══════════════════════════════════════════════════
+let W, H, bgImg=null, bugs=[];
+let globalWindX=0, globalWindY=0;  // swipe-triggered whole-swarm impulse
+const cv = document.getElementById('cv');
+const cx = cv.getContext('2d');
+const mouse = { x:-9999, y:-9999, px:-9999, py:-9999, vx:0, vy:0 };
+
+// fps
+let fc=0, lt=0, fps=0;
+const fpsEl = document.getElementById('fpsbar');
+
+// ═══════════════════════════════════════════════════
+//  BUG CONSTRUCTOR
+// ═══════════════════════════════════════════════════
+function makeBug(x, y){
+  const s = SCHEMES[scheme];
+  const isSecondary = Math.random() < 0.38;
+  return {
+    x, y,
+    vx: (Math.random()-.5)*1.2,
+    vy: (Math.random()-.5)*1.2,
+    rx: x, ry: y,       // rest / home position
+    homeX: x, homeY: y, // original home (for density changes)
+    char: randChar(),
+    charT: Math.floor(Math.random()*120),
+    phase: Math.random()*Math.PI*2,    // glow pulse phase
+    phaseSpd: 0.018 + Math.random()*0.022,
+    baseOpacity: 0.45 + Math.random()*0.45,
+    scale: 0.75 + Math.random()*0.55,
+    color: isSecondary ? s.secondary : s.primary,
+    isSecondary,
+    trail: [],           // [{x,y}] ring buffer
+    energy: 0,           // 0=calm, 1=excited (from being hit by mouse)
+    wanderAngle: Math.random()*Math.PI*2,
+  };
+}
+
+function randChar(){ return CFG.charset[Math.floor(Math.random()*CFG.charset.length)]; }
+
+// ═══════════════════════════════════════════════════
+//  INIT / RESIZE
+// ═══════════════════════════════════════════════════
+function init(){
+  W = cv.width  = window.innerWidth;
+  H = cv.height = window.innerHeight;
+  spawnBugs();
+}
+
+function spawnBugs(){
+  const n = CFG.count;
+  bugs = [];
+  for(let i=0;i<n;i++){
+    const x = Math.random()*W;
+    const y = Math.random()*H;
+    bugs.push(makeBug(x,y));
+  }
+}
+
+function respawnBugs(){
+  // keep existing bugs, add/remove to match new count
+  const n = CFG.count;
+  while(bugs.length > n) bugs.pop();
+  while(bugs.length < n){
+    bugs.push(makeBug(Math.random()*W, Math.random()*H));
+  }
+}
+
+window.addEventListener('resize', init);
+
+// ═══════════════════════════════════════════════════
+//  PHYSICS
+// ═══════════════════════════════════════════════════
+function updatePhysics(dt){
+  const mx=mouse.x, my=mouse.y;
+  const mvx=mouse.vx, mvy=mouse.vy;
+  const spd=Math.sqrt(mvx*mvx+mvy*mvy);
+  const r=CFG.mRadius, r2=r*r;
+  const f=CFG.mForce;
+
+  // fast swipe → global wind impulse
+  if(spd>18){
+    globalWindX += mvx * 0.14;
+    globalWindY += mvy * 0.08;
+  }
+  globalWindX *= 0.963;
+  globalWindY *= 0.963;
+
+  for(const b of bugs){
+    // ── trail ──
+    b.trail.push({x:b.x, y:b.y});
+    if(b.trail.length > CFG.trailLen) b.trail.shift();
+
+    // ── wander ──
+    b.wanderAngle += (Math.random()-.5)*0.35;
+    const wx = Math.cos(b.wanderAngle)*CFG.wander;
+    const wy = Math.sin(b.wanderAngle)*CFG.wander;
+
+    // ── mouse repulsion ──
+    let rx=0,ry=0;
+    const dx=b.x-mx, dy=b.y-my;
+    const d2=dx*dx+dy*dy;
+    if(d2<r2&&d2>0.01){
+      const d=Math.sqrt(d2);
+      const mag=f*(1-d/r)*(1-d/r);  // quadratic falloff
+      rx=(dx/d)*mag;
+      ry=(dy/d)*mag;
+      b.energy=Math.min(1,b.energy+(mag*0.04));
+    }
+
+    // ── spring to rest (home) ──
+    const ax=-CFG.spring*(b.x-b.rx)-CFG.spring*0.4*(b.x-b.homeX);
+    const ay=-CFG.spring*(b.y-b.ry)-CFG.spring*0.4*(b.y-b.homeY);
+
+    b.vx=(b.vx+ax+rx+wx+globalWindX*0.06)*CFG.damping;
+    b.vy=(b.vy+ay+ry+wy+globalWindY*0.06)*CFG.damping;
+
+    // clamp wander speed
+    const bspd=Math.sqrt(b.vx*b.vx+b.vy*b.vy);
+    if(bspd>8){ b.vx*=8/bspd; b.vy*=8/bspd; }
+
+    b.x+=b.vx;
+    b.y+=b.vy;
+
+    // soft boundary
+    if(b.x<-20) b.vx+=0.8;
+    if(b.x>W+20) b.vx-=0.8;
+    if(b.y<-20) b.vy+=0.8;
+    if(b.y>H+20) b.vy-=0.8;
+
+    // phase & energy decay
+    b.phase+=b.phaseSpd;
+    b.energy*=0.93;
+
+    // char swap: excited bugs change faster
+    b.charT--;
+    if(b.charT<=0){
+      b.char=randChar();
+      b.charT=b.energy>0.3 ? 8+Math.floor(Math.random()*20) : 40+Math.floor(Math.random()*120);
+    }
+  }
+}
+
+// ═══════════════════════════════════════════════════
+//  DRAW
+// ═══════════════════════════════════════════════════
+function draw(){
+  const s=SCHEMES[scheme];
+
+  // bg fill (or image)
+  if(bgImg){
+    cx.clearRect(0,0,W,H);
+    cx.save();
+    cx.globalAlpha=0.6;
+    const ir=bgImg.width/bgImg.height, cr=W/H;
+    let sw,sh,sx,sy;
+    if(ir>cr){sh=H;sw=sh*ir;sx=(W-sw)/2;sy=0;}
+    else{sw=W;sh=sw/ir;sx=0;sy=(H-sh)/2;}
+    cx.drawImage(bgImg,sx,sy,sw,sh);
+    cx.restore();
+    // dark overlay so bugs pop
+    cx.fillStyle='rgba(2,8,4,0.55)';
+    cx.fillRect(0,0,W,H);
+  } else {
+    // paint with slight trail for motion blur feel
+    cx.fillStyle='rgba(2,8,4,0.22)';
+    cx.fillRect(0,0,W,H);
+  }
+
+  const sz=CFG.charSize;
+  const gl=CFG.glow;
+
+  for(const b of bugs){
+    const pulse=(Math.sin(b.phase)*0.5+0.5);  // 0..1 breathing
+    const excite=b.energy;
+    const baseA=b.baseOpacity*(0.55+pulse*0.45);
+
+    // ── trail ──
+    const tl=b.trail.length;
+    if(tl>1 && (Math.abs(b.vx)+Math.abs(b.vy))>0.8){
+      const spd=Math.sqrt(b.vx*b.vx+b.vy*b.vy);
+      const trailStrength=Math.min(1,spd/5);
+      for(let ti=0;ti<tl;ti++){
+        const t=b.trail[ti];
+        const frac=(ti+1)/tl;           // 0=old 1=recent
+        cx.save();
+        cx.globalAlpha=frac*frac*baseA*trailStrength*0.5;
+        cx.shadowColor=b.color;
+        cx.shadowBlur=gl*0.5;
+        cx.font=`${(sz*b.scale*frac*0.8)|0}px 'Hiragino Kaku Gothic Pro',monospace`;
+        cx.fillStyle=b.color;
+        cx.textAlign='center';
+        cx.textBaseline='middle';
+        cx.fillText(b.char,t.x,t.y);
+        cx.restore();
+      }
+    }
+
+    // ── main glyph ──
+    // hot color when excited
+    const col = excite>0.4
+      ? lerpColor(b.color, s.hot, excite*0.7)
+      : b.color;
+
+    const finalGlow = gl*(0.6+pulse*0.4) + excite*gl*1.2;
+    const finalSz   = sz*b.scale*(1+excite*0.25);
+
+    cx.save();
+    cx.globalAlpha=Math.min(1, baseA*(1+excite*0.5));
+    cx.shadowColor=col;
+    cx.shadowBlur=finalGlow;
+    cx.font=`${finalSz|0}px 'Hiragino Kaku Gothic Pro','Noto Sans SC',monospace`;
+    cx.fillStyle=col;
+    cx.textAlign='center';
+    cx.textBaseline='middle';
+    cx.fillText(b.char, b.x, b.y);
+    // second pass for intensity
+    if(excite>0.1||pulse>0.7){
+      cx.globalAlpha=(baseA*0.5)*(excite>0.2?excite:pulse*0.4);
+      cx.shadowBlur=finalGlow*2;
+      cx.fillText(b.char, b.x, b.y);
+    }
+    cx.restore();
+  }
+
+  // ── subtle mouse halo ──
+  if(mouse.x>0&&mouse.x<W){
+    const halo=cx.createRadialGradient(mouse.x,mouse.y,0,mouse.x,mouse.y,CFG.mRadius*0.7);
+    halo.addColorStop(0,'rgba(168,240,122,0.04)');
+    halo.addColorStop(1,'rgba(0,0,0,0)');
+    cx.fillStyle=halo;
+    cx.fillRect(mouse.x-CFG.mRadius,mouse.y-CFG.mRadius,CFG.mRadius*2,CFG.mRadius*2);
+  }
+}
+
+// ═══════════════════════════════════════════════════
+//  UTILS
+// ═══════════════════════════════════════════════════
+function lerpColor(a,b,t){
+  const ah=a.replace('#',''), bh=b.replace('#','');
+  const ar=parseInt(ah.slice(0,2),16), ag=parseInt(ah.slice(2,4),16), ab=parseInt(ah.slice(4,6),16);
+  const br=parseInt(bh.slice(0,2),16), bg=parseInt(bh.slice(2,4),16), bb=parseInt(bh.slice(4,6),16);
+  const r=(ar+(br-ar)*t)|0, g=(ag+(bg-ag)*t)|0, bl=(ab+(bb-ab)*t)|0;
+  return `rgb(${r},${g},${bl})`;
+}
+
+// apply color scheme to existing bugs
+function applyScheme(){
+  const s=SCHEMES[scheme];
+  document.body.style.background=s.bg;
+  for(const b of bugs){
+    const isS=b.isSecondary;
+    b.color=isS?s.secondary:s.primary;
+  }
+}
+
+// ═══════════════════════════════════════════════════
+//  LOOP
+// ═══════════════════════════════════════════════════
+function loop(ts){
+  fc++;
+  if(ts-lt>=1000){fps=fc;fc=0;lt=ts;fpsEl.textContent=fps+' fps';}
+  const dt=Math.min(32, ts-(loop._prev||ts));
+  loop._prev=ts;
+  updatePhysics(dt);
+  draw();
+  requestAnimationFrame(loop);
+}
+
+// ═══════════════════════════════════════════════════
+//  INPUT
+// ═══════════════════════════════════════════════════
+const curEl=document.getElementById('cur');
+window.addEventListener('mousemove',e=>{
+  mouse.vx=e.clientX-mouse.px;
+  mouse.vy=e.clientY-mouse.py;
+  mouse.px=mouse.x;  mouse.py=mouse.y;
+  mouse.x=e.clientX; mouse.y=e.clientY;
+  curEl.style.left=e.clientX+'px';
+  curEl.style.top =e.clientY+'px';
+  const spd=Math.sqrt(mouse.vx*mouse.vx+mouse.vy*mouse.vy);
+  curEl.classList.toggle('fast',spd>10);
+});
+window.addEventListener('mouseleave',()=>{
+  mouse.x=-9999;mouse.y=-9999;mouse.vx=0;mouse.vy=0;
+});
+window.addEventListener('touchmove',e=>{
+  e.preventDefault();
+  const t=e.touches[0];
+  mouse.vx=t.clientX-mouse.px; mouse.vy=t.clientY-mouse.py;
+  mouse.px=mouse.x;  mouse.py=mouse.y;
+  mouse.x=t.clientX; mouse.y=t.clientY;
+},{passive:false});
+window.addEventListener('touchend',()=>{mouse.x=-9999;mouse.y=-9999;});
+
+// ═══════════════════════════════════════════════════
+//  PANEL
+// ═══════════════════════════════════════════════════
+const pnl=document.getElementById('pnl');
+document.getElementById('tog').addEventListener('click',()=>pnl.classList.toggle('open'));
+
+function wire(id,cfgKey,spanId,cb){
+  const el=document.getElementById(id);
+  const sp=document.getElementById(spanId);
+  el.value=CFG[cfgKey];
+  sp.textContent=CFG[cfgKey];
+  el.addEventListener('input',()=>{
+    CFG[cfgKey]=parseFloat(el.value);
+    sp.textContent=el.value;
+    if(cb) cb();
+  });
+}
+
+wire('density','count','dval', respawnBugs);
+wire('chsz',  'charSize','szval', null);
+wire('glow',  'glow',  'glval', null);
+wire('mrad',  'mRadius','rval', null);
+wire('mforce','mForce', 'fval', null);
+
+// charset
+const csetEl=document.getElementById('cset');
+const csnEl =document.getElementById('csn');
+csetEl.value=CFG.charset;
+csnEl.textContent=CFG.charset.length;
+csetEl.addEventListener('input',()=>{
+  const v=csetEl.value; if(!v) return;
+  CFG.charset=v; csnEl.textContent=v.length;
+  for(const b of bugs) b.char=randChar();
+});
+
+// color schemes
+document.querySelectorAll('#schemes .spill').forEach(el=>{
+  el.addEventListener('click',()=>{
+    document.querySelectorAll('#schemes .spill').forEach(e=>e.classList.remove('on'));
+    el.classList.add('on');
+    scheme=parseInt(el.dataset.s);
+    applyScheme();
+  });
+});
+
+// bg
+const bgfile=document.getElementById('bgfile');
+bgfile.addEventListener('change',()=>{
+  if(!bgfile.files[0]) return;
+  const img=new Image();
+  img.onload=()=>bgImg=img;
+  img.src=URL.createObjectURL(bgfile.files[0]);
+});
+document.getElementById('clrbg').addEventListener('click',()=>{bgImg=null;bgfile.value='';});
+document.body.addEventListener('dragover',e=>e.preventDefault());
+document.body.addEventListener('drop',e=>{
+  e.preventDefault();
+  const f=e.dataTransfer.files[0];
+  if(f&&f.type.startsWith('image/')){
+    const img=new Image();
+    img.onload=()=>bgImg=img;
+    img.src=URL.createObjectURL(f);
+  }
+});
+
+// ═══════════════════════════════════════════════════
+//  START
+// ═══════════════════════════════════════════════════
+init();
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
